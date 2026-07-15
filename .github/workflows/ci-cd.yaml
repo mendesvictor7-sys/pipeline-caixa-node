@@ -1,5 +1,6 @@
 name: Node.js CI/CD
-
+-name: Registrar início
+run: echo "START_TIME=$(date)" >> $GITHUB_ENV
 # Dispara em pushes e PRs, mas só quando algo do app Node muda.
 on:
   push:
@@ -106,3 +107,14 @@ jobs:
       - name: Publicar no Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+- name: Job Summary
+  if: always()
+  run: |
+    echo "## Resumo da Execução" >> $GITHUB_STEP_SUMMARY
+    echo "" >> $GITHUB_STEP_SUMMARY
+    echo "| Campo | Valor |" >> $GITHUB_STEP_SUMMARY
+    echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
+    echo "| Branch | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+    echo "| Commit | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+    echo "| Status | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
