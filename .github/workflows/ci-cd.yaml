@@ -1,120 +1,196 @@
 name: Node.js CI/CD
--name: Registrar início
-run: echo "START_TIME=$(date)" >> $GITHUB_ENV
-# Dispara em pushes e PRs, mas só quando algo do app Node muda.
+ 
 on:
   push:
     branches: [main]
     paths:
       - "frontend/**"
       - "backend/**"
+ 
   pull_request:
     paths:
       - "frontend/**"
       - "backend/**"
-
-# Permissões necessárias para publicar imagem no GitHub Container Registry (ghcr.io).
+ 
 permissions:
   contents: read
   packages: write
-
+ 
 jobs:
-  # ---------- 1. LINT + TESTES (com matrix de versões) ----------
+ 
+  # ---------- 1. LINT + TESTES ----------
   test:
     name: Lint e testes (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+ 
     strategy:
       fail-fast: false
       matrix:
         node-version: [18, 20, 22]
+ 
     defaults:
       run:
         working-directory: backend
+ 
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
-
+ 
+      - name: Registrar início
+        run: echo "START_TIME=$(date +%s)" >> $GITHUB_ENV
+ 
       - name: Configurar Node ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-
+ 
       - name: Instalar dependências
         run: npm install
-
+ 
       - name: Rodar linter
         run: npm run lint
-
+ 
       - name: Rodar testes
         run: npm test
-
-  # ---------- 2. BUILD + PUSH DA IMAGEM DOCKER ----------
-  # Só roda depois dos testes passarem e apenas em push na main.
+ 
+      # ITEM B
+      - name: Alerta de falha
+        if: failure()
+        run: |
+          echo "::error title=Falha no Workflow::Falha na execução dos testes Node ${{ matrix.node-version }}"
+          echo "::error::Branch: ${{ github.ref_name }}"
+          echo "::error::Commit: ${{ github.sha }}"
+ 
+      # ITEM A
+      - name: Job Summary
+        if: always()
+        run: |
+          END_TIME=$(date +%s)
+          DURATION=$((END_TIME - START_TIME))
+ 
+          echo "## Resumo da Execução" >> $GITHUB_STEP_SUMMARY
+          echo "| Campo | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Testes |" >> $GITHUB_STEP_SUMMARY
+          echo "| Node | ${{ matrix.node-version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Duração | ${DURATION}s |" >> $GITHUB_STEP_SUMMARY
+ 
+  # ---------- 2. BUILD + PUSH DA IMAGEM ----------
   docker:
     name: Build e push da imagem Docker
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+ 
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
-
+ 
+      - name: Registrar início
+        run: echo "START_TIME=$(date +%s)" >> $GITHUB_ENV
+ 
       - name: Login no GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
+ 
       - name: Build e push do backend
         uses: docker/build-push-action@v6
         with:
           context: backend
           push: true
           tags: ghcr.io/${{ github.repository }}/node-backend:latest
-
+ 
       - name: Build e push do frontend
         uses: docker/build-push-action@v6
         with:
           context: frontend
           push: true
           tags: ghcr.io/${{ github.repository }}/node-frontend:latest
-
-  # ---------- 3. DEPLOY DO FRONTEND (GitHub Pages) ----------
+ 
+      # ITEM B
+      - name: Alerta de falha
+        if: failure()
+        run: |
+          echo "::error title=Falha no Docker Build::Erro ao gerar ou publicar imagem Docker"
+          echo "::error::Branch: ${{ github.ref_name }}"
+          echo "::error::Commit: ${{ github.sha }}"
+ 
+      # ITEM A
+      - name: Job Summary
+        if: always()
+        run: |
+          END_TIME=$(date +%s)
+          DURATION=$((END_TIME - START_TIME))
+ 
+          echo "## Resumo da Execução" >> $GITHUB_STEP_SUMMARY
+          echo "| Campo | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Docker |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Duração | ${DURATION}s |" >> $GITHUB_STEP_SUMMARY
+ 
+  # ---------- 3. DEPLOY ----------
   deploy:
     name: Deploy do frontend no GitHub Pages
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+ 
     permissions:
       pages: write
       id-token: write
+ 
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+ 
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
-
+ 
+      - name: Registrar início
+        run: echo "START_TIME=$(date +%s)" >> $GITHUB_ENV
+ 
       - name: Configurar Pages
         uses: actions/configure-pages@v5
-
+ 
       - name: Enviar artefato (pasta do frontend)
         uses: actions/upload-pages-artifact@v3
         with:
           path: frontend
-
+ 
       - name: Publicar no Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
-- name: Job Summary
-  if: always()
-  run: |
-    echo "## Resumo da Execução" >> $GITHUB_STEP_SUMMARY
-    echo "" >> $GITHUB_STEP_SUMMARY
-    echo "| Campo | Valor |" >> $GITHUB_STEP_SUMMARY
-    echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
-    echo "| Branch | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
-    echo "| Commit | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
-    echo "| Status | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+ 
+      # ITEM B
+      - name: Alerta de falha
+        if: failure()
+        run: |
+          echo "::error title=Falha no Deploy::Erro ao publicar GitHub Pages"
+          echo "::error::Branch: ${{ github.ref_name }}"
+          echo "::error::Commit: ${{ github.sha }}"
+ 
+      # ITEM A
+      - name: Job Summary
+        if: always()
+        run: |
+          END_TIME=$(date +%s)
+          DURATION=$((END_TIME - START_TIME))
+ 
+          echo "## Resumo da Execução" >> $GITHUB_STEP_SUMMARY
+          echo "| Campo | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Deploy |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Duração | ${DURATION}s |" >> $GITHUB_STEP_SUMMARY
